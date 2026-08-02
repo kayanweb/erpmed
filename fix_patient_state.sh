@@ -1,1 +1,0 @@
-sed -i "s/export type PatientState = 'REGISTERED' | 'IN_TRIAGE' | 'ER_EVALUATION' | 'ADMITTED' | 'DISCHARGED';/export type PatientState = 'REGISTERED' | 'IN_TRIAGE' | 'ER_EVALUATION' | 'ADMITTED' | 'DISCHARGED' | 'BOOKED_OPD' | 'WAITING_OPD' | 'IN_CONSULTATION';/" src/core/domain/PatientAggregate.ts

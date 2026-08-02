@@ -1,8 +1,0 @@
-{
-  "name": "Erpmed",
-  "description": "Enterprise Hospital Information System (HIS) focused on core clinical workflows, including a 14-step Emergency Department journey, Advanced OR Management, Clinical Pharmacy with MAR, and comprehensive Inpatient Care.",
-  "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}
