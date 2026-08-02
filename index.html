@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>بوابة مستشفى كيان الرقمية للجودة والتمريض | Kayan Clinical Quality Portal</title>
+    <script>
+      (function() {
+        var createMockStorage = function() {
+          var data = {};
+          return {
+            getItem: function(key) { return data[key] || null; },
+            setItem: function(key, value) { data[key] = String(value); },
+            removeItem: function(key) { delete data[key]; },
+            clear: function() { data = {}; },
+            key: function(index) { return Object.keys(data)[index] || null; },
+            get length() { return Object.keys(data).length; }
+          };
+        };
+
+        var patchStorage = function(storageName) {
+          try {
+            if (typeof window !== 'undefined' && window[storageName]) {
+              var storage = window[storageName];
+              storage.getItem('test');
+              return;
+            }
+          } catch (e) {}
+
+          try {
+            Object.defineProperty(window, storageName, {
+              value: createMockStorage(),
+              writable: true,
+              configurable: true
+            });
+          } catch (e) {
+            console.warn("Could not patch " + storageName, e);
+          }
+        };
+
+        patchStorage('localStorage');
+        patchStorage('sessionStorage');
+
+        try {
+          if (typeof window !== 'undefined' && window.indexedDB) {
+            // just a test access
+          }
+        } catch (e) {
+          try {
+            Object.defineProperty(window, 'indexedDB', {
+              value: null,
+              writable: true,
+              configurable: true
+            });
+          } catch (err) {}
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

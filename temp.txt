@@ -1,0 +1,447 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  UserPlus, UserMinus, ArrowRightLeft, Clock, Bed, ShieldAlert,
+  Search, Filter, Plus, FileText, CheckCircle2, UserCheck, 
+  UserX, Download, Printer, User, LayoutDashboard, History,
+  Activity, MoreHorizontal, ArrowUpRight, ArrowDownRight,
+  LogOut, BedDouble, AlertCircle, Check, X
+} from 'lucide-react';
+import { useHIS } from '../context/HISContext';
+import { toast } from 'sonner';
+import { ClinicalSignaturePanel } from './ClinicalSignaturePanel';
+
+interface Props {
+  language: 'ar' | 'en';
+}
+
+export default function AdmissionCenterDashboard({ language }: Props) {
+  const isAr = language === 'ar';
+  const { patients, updatePatient, updatePatientStatus, departments, beds, setBeds, currentUser, logAudit } = useHIS();
+  
+  const [activeTab, setActiveTab] = useState<'pending' | 'admitted' | 'discharges' | 'transfers'>('pending');
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showAssignModal, setShowAssignModal] = useState<any>(null);
+  const [selectedDept, setSelectedDept] = useState("");
+  const [selectedBed, setSelectedBed] = useState("");
+
+  const handleSignAdmission = (data: any, signedBy: string) => {
+    if (showAssignModal && selectedBed) {
+      const bed = beds.find(b => b.id === selectedBed);
+      if (!bed) return;
+
+      // Update patient location integrity
+      updatePatient(showAssignModal.id, {
+        status: 'ward',
+        bedId: selectedBed,
+        departmentId: bed.departmentId,
+        roomId: bed.roomId,
+        currentClinicalLocation: `${bed.building || 'Main'} - ${bed.floor || '1F'} - ${bed.roomNumber || 'Room'}`
+      });
+
+      // Update bed status globally
+      setBeds(prev => prev.map(b => b.id === selectedBed ? { ...b, status: 'occupied', patientId: showAssignModal.id } : b));
+
+      logAudit({
+        action: 'ADMISSION_SIGNED',
+        entityType: 'ADMISSION',
+        entityId: showAssignModal.id,
+        reason: `Bed ${bed.bedNumber} assigned in ${bed.departmentId}`,
+        newValue: { bedId: selectedBed, signedBy }
+      });
+
+      toast.success(isAr ? "تم اعتماد التنويم والتوقيع بنجاح" : "Admission approved and signed successfully");
+      setShowAssignModal(null);
+      setSelectedBed("");
+    } else {
+      toast.error(isAr ? "يجب اختيار سرير أولاً" : "Must select a bed first");
+    }
+  };
+
+  const stats = [
+    { label: isAr ? "تنويم معلق" : "Pending Admissions", value: patients.filter(p => p.status === 'triage' || p.status === 'waiting').length.toString(), change: "+2", icon: Clock, color: "text-amber-600", bg: "bg-amber-100" },
+    { label: isAr ? "أسرة مشغولة" : "Occupied Beds", value: beds.filter(b => b.status === 'occupied').length.toString(), change: "82%", icon: Bed, color: "text-indigo-600", bg: "bg-indigo-100" },
+    { label: isAr ? "خروج اليوم" : "Today's Discharges", value: "27", change: "-4", icon: UserMinus, color: "text-emerald-600", bg: "bg-emerald-100" },
+    { label: isAr ? "تحويلات نشطة" : "Active Transfers", value: "8", change: "+1", icon: ArrowRightLeft, color: "text-blue-600", bg: "bg-blue-100" },
+  ];
+
+  const pendingAdmissions = patients.filter(p => p.status === 'triage' || p.status === 'waiting');
+  const admittedPatients = patients.filter(p => p.status === 'ward');
+
+  const handleAssignBed = (patient: any) => {
+    if (!selectedBed) {
+      toast.error(isAr ? "يرجى اختيار سرير أولاً" : "Please select a bed first");
+      return;
+    }
+    // We'll rely on the Signature Panel to finalize
+    toast.info(isAr ? "يرجى التوقيع لإتمام العملية" : "Please sign to finalize the process");
+  };
+
+  const dischargeCandidates = patients.filter(p => p.status === 'ward').slice(0, 5).map((p, i) => ({
+    ...p,
+    dischargeOrder: "Today, 09:00 AM",
+    clearance: i % 2 === 0 ? "Pending" : "Cleared",
+    pharmacy: i % 3 === 0 ? "Pending" : "Cleared"
+  }));
+
+  return (
+    <div className="flex-1 flex flex-col h-full min-h-0 bg-slate-50" dir={isAr ? 'rtl' : 'ltr'}>
+      {/* Header */}
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 sm:py-4 shrink-0 shadow-sm z-[5] flex flex-row flex-wrap items-center justify-between gap-2 sm:gap-4">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-200 shrink-0">
+            <UserPlus size={20} />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-xl font-black text-slate-800 uppercase tracking-tight truncate">
+              {isAr ? "مركز القبول والخروج والتحويل" : "Admissions & Census Management"}
+            </h1>
+            <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate">
+              {isAr ? "نظام إدارة حركة المرضى - النسخة المؤسسية" : "Patient Flow Control System - Enterprise Edition"}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <div className="relative flex-1 sm:flex-none min-w-[150px]">
+            <Search className={`w-4 h-4 text-slate-400 absolute top-1/2 -translate-y-1/2 ${isAr ? 'right-3' : 'left-3'}`} />
+            <input 
+              type="text" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={isAr ? "بحث..." : "Search..."}
+              className={`w-full sm:w-48 xl:w-64 ${isAr ? 'pr-9' : 'pl-9'} py-2 bg-slate-100 border-none rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 font-bold`}
+            />
+          </div>
+          <button className="flex-1 sm:flex-none justify-center px-4 py-2 bg-indigo-600 text-white text-[10px] sm:text-xs font-black uppercase rounded-lg shadow-md hover:bg-indigo-700 transition-all flex items-center gap-2 active:scale-95 whitespace-nowrap">
+            <Plus size={16} />
+            {isAr ? "تنويم مباشر" : "Direct Admission"}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-3 sm:p-6 custom-scrollbar space-y-4 sm:space-y-6">
+        {/* Key Metrics */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {stats.map((stat, i) => (
+            <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-2 sm:gap-4 flex-wrap  group hover:border-indigo-300 transition-all">
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${stat.bg} ${stat.color} group-hover:scale-110 transition-transform`}>
+                <stat.icon size={24} />
+              </div>
+              <div className="flex-1">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{stat.label}</p>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-lg sm:text-2xl font-black text-slate-800">{stat.value}</span>
+                  <div className={`flex items-center text-[10px] font-bold ${stat.change.startsWith('+') ? 'text-emerald-500' : 'text-slate-400'}`}>
+                    {stat.change.startsWith('+') ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+                    {stat.change}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Workspace Area */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[500px]">
+          {/* Tabs */}
+          <div className="flex items-center gap-1 p-2 bg-slate-50 border-b border-slate-100 overflow-x-auto hide-scrollbar">
+            <button 
+              onClick={() => setActiveTab('pending')}
+              className={`px-4 py-2 text-xs font-black uppercase rounded-lg transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === 'pending' ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:bg-slate-200/50'}`}
+            >
+              <Clock size={14} />
+              {isAr ? "الطلبات المعلقة" : "Pending Queue"}
+              <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full text-[10px] ml-1">14</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('admitted')}
+              className={`px-4 py-2 text-xs font-black uppercase rounded-lg transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === 'admitted' ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:bg-slate-200/50'}`}
+            >
+              <UserCheck size={14} />
+              {isAr ? "توزيع الأسرة" : "Bed Census"}
+            </button>
+            <button 
+              onClick={() => setActiveTab('discharges')}
+              className={`px-4 py-2 text-xs font-black uppercase rounded-lg transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === 'discharges' ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:bg-slate-200/50'}`}
+            >
+              <LogOut size={14} />
+              {isAr ? "إدارة الخروج" : "Discharge Hub"}
+              <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full text-[10px] ml-1">27</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('transfers')}
+              className={`px-4 py-2 text-xs font-black uppercase rounded-lg transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === 'transfers' ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:bg-slate-200/50'}`}
+            >
+              <ArrowRightLeft size={14} />
+              {isAr ? "حركة المرضى" : "Internal Transfers"}
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1">
+            {activeTab === 'pending' && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-500 border-b border-slate-100">
+                      <th className={`p-4 font-black ${isAr ? 'text-right' : 'text-left'}`}>Request</th>
+                      <th className={`p-4 font-black ${isAr ? 'text-right' : 'text-left'}`}>Patient Details</th>
+                      <th className={`p-4 font-black ${isAr ? 'text-right' : 'text-left'}`}>Path (Src &rarr; Dest)</th>
+                      <th className={`p-4 font-black ${isAr ? 'text-right' : 'text-left'}`}>Triage</th>
+                      <th className={`p-4 font-black ${isAr ? 'text-right' : 'text-left'}`}>Status</th>
+                      <th className={`p-4 font-black ${isAr ? 'text-right' : 'text-left'}`}>Workflow</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-sm">
+                    {pendingAdmissions.map((req, i) => {
+                      const dept = departments.find(d => d.id === req.departmentId);
+                      return (
+                        <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                          <td className="p-4 font-mono font-bold text-slate-400 text-xs">{req.id}</td>
+                          <td className="p-4">
+                            <div className="font-bold text-slate-800 cursor-pointer hover:text-indigo-600 transition-colors"
+                              onClick={() => window.dispatchEvent(new CustomEvent("openPatientChart", { detail: { patientId: req.id, patientName: isAr ? req.nameAr : req.nameEn, initialTab: "summary" } }))}
+                            >
+                              {isAr ? req.nameAr : req.nameEn}
+                            </div>
+                            <div className="text-[10px] font-mono text-slate-400">MRN: {req.mrn}</div>
+                          </td>
+                          <td className="p-4">
+                            <div className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-600">
+                              <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-200">ER</span>
+                              <ArrowRightLeft size={10} className="text-slate-400" />
+                              <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-100">{dept ? (isAr ? dept.nameAr : dept.nameEn) : "No Dept"}</span>
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border bg-amber-50 text-amber-700 border-amber-100`}>
+                              Urgent
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600">
+                                <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></div>
+                                {req.status}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <button 
+                              onClick={() => setShowAssignModal(req)}
+                              className="px-3 py-1.5 bg-indigo-600 text-white hover:bg-indigo-700 font-black text-[10px] uppercase rounded-lg shadow-sm transition-all active:scale-95"
+                            >
+                              {isAr ? "تخصيص السرير" : "Assign Bed"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            
+            {activeTab === 'admitted' && (
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-2 sm:gap-4 flex-wrap ">
+                    <h3 className="font-black text-slate-800 uppercase tracking-tight">{isAr ? "تعداد المرضى وتوزيع الأسرة" : "Current Census & Bed Map"}</h3>
+                    <div className="flex items-center gap-2">
+                      <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> {isAr ? "متاح" : "Vacant"}</span>
+                      <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500"><div className="w-2 h-2 rounded-full bg-indigo-500"></div> {isAr ? "مشغول" : "Occupied"}</span>
+                      <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500"><div className="w-2 h-2 rounded-full bg-amber-500"></div> {isAr ? "تجهيز" : "Cleaning"}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 min-w-max">
+                    <button className="p-2 bg-slate-100 rounded-lg text-slate-600"><Filter size={14} /></button>
+                    <button className="p-2 bg-slate-100 rounded-lg text-slate-600"><Printer size={14} /></button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                  {Array.from({ length: 48 }).map((_, i) => {
+                    const isOccupied = i % 3 !== 0;
+                    const patient = admittedPatients[i % (admittedPatients.length || 1)];
+                    return (
+                      <div key={i} className={`p-3 rounded-xl border transition-all flex flex-col justify-between h-24 ${
+                        isOccupied 
+                          ? 'bg-white border-indigo-100 shadow-sm hover:border-indigo-300' 
+                          : i % 10 === 0 ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200 opacity-60'
+                      }`}>
+                        <div className="flex justify-between items-start">
+                          <span className="text-[10px] font-black text-slate-400">B-{100 + i}</span>
+                          {isOccupied && <ShieldAlert size={12} className="text-indigo-400" />}
+                        </div>
+                        {isOccupied ? (
+                          <div>
+                            <div className="text-[10px] font-black text-slate-800 truncate leading-tight uppercase tracking-tighter">
+                              {isAr ? patient?.nameAr : patient?.nameEn}
+                            </div>
+                            <div className="text-[8px] font-bold text-indigo-500 mt-1 uppercase">Intern. Med</div>
+                          </div>
+                        ) : i % 10 === 0 ? (
+                          <div className="text-[8px] font-black text-amber-600 uppercase flex items-center gap-1">
+                            <Activity size={10} /> HOUSEKEEPING
+                          </div>
+                        ) : (
+                          <div className="text-[10px] font-black text-slate-300 uppercase">Vacant</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'discharges' && (
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="font-black text-slate-800 uppercase tracking-tight">{isAr ? "أوامر الخروج المعلقة" : "Pending Discharge Clearance"}</h3>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-500">{isAr ? "تمت التصفية:" : "Cleared Today:"} 18</span>
+                  </div>
+                </div>
+                
+                <div className="space-y-3">
+                  {dischargeCandidates.map((p, i) => (
+                    <div key={i} className="flex items-center gap-2 sm:gap-4 flex-wrap  bg-white p-4 rounded-xl border border-slate-200 hover:border-indigo-300 transition-all group">
+                      <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-all font-black">
+                        {p.nameEn?.charAt(0)}
+                      </div>
+                      <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-center">
+                        <div>
+                          <div className="font-bold text-slate-800">{isAr ? p.nameAr : p.nameEn}</div>
+                          <div className="text-[10px] font-mono text-slate-400 uppercase tracking-tighter">Room: 302B • MRN: {p.mrn}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">{isAr ? "أمر الخروج" : "Discharge Order"}</div>
+                          <div className="text-[10px] font-black text-slate-700 flex items-center gap-1">
+                            <Clock size={12} className="text-indigo-500" /> {p.dischargeOrder}
+                          </div>
+                        </div>
+                        <div className="flex gap-4">
+                          <div>
+                            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">{isAr ? "التأمين" : "Finance"}</div>
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${p.clearance === 'Cleared' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-600 border border-amber-100'}`}>
+                              {p.clearance}
+                            </span>
+                          </div>
+                          <div>
+                            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">{isAr ? "الصيدلية" : "Pharmacy"}</div>
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${p.pharmacy === 'Cleared' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-amber-50 text-amber-600 border border-amber-100'}`}>
+                              {p.pharmacy}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <button className="px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg text-[10px] font-black uppercase shadow-sm active:scale-95 transition-all">
+                            {isAr ? "تنفيذ الخروج" : "Finalize Discharge"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'transfers' && (
+              <div className="p-12 text-center text-slate-400">
+                <ArrowRightLeft className="w-16 h-16 mx-auto mb-4 opacity-20" />
+                <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight mb-2">{isAr ? "سجل تحركات المرضى" : "Patient Transfer Logistics"}</h3>
+                <p className="text-sm font-medium text-slate-500 max-w-md mx-auto">
+                  {isAr ? "تتبع حركة المرضى بين الأقسام، العناية المركزة، وغرف العمليات في الوقت الفعلي." : "Monitor patient movement between wards, ICU units, and surgical suites in real-time."}
+                </p>
+                <button className="mt-6 px-6 py-3 bg-indigo-50 text-indigo-700 font-black text-xs uppercase rounded-xl hover:bg-indigo-100 transition-all">
+                  {isAr ? "فتح لوحة التحويلات" : "Open Transfer Command"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Assign Bed Modal */}
+      {showAssignModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="bg-slate-50 p-6 border-b border-slate-100 flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">{isAr ? "تخصيص سرير للمريض" : "Inpatient Bed Assignment"}</h3>
+                <p className="text-xs font-bold text-slate-500 uppercase mt-1">{isAr ? "توزيع المريض على الأجنحة الشاغرة" : "Assigning unit and bed location"}</p>
+              </div>
+              <button onClick={() => setShowAssignModal(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400"><X size={20} /></button>
+            </div>
+            
+            <div className="p-8">
+              <div className="flex items-center gap-6 mb-8 bg-indigo-50 p-6 rounded-2xl border border-indigo-100">
+                <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-indigo-600 font-black text-2xl shadow-sm border border-indigo-100">
+                  {showAssignModal.nameAr?.charAt(0) || showAssignModal.nameEn?.charAt(0)}
+                </div>
+                <div>
+                  <div className="text-xl font-black text-slate-800 uppercase tracking-tight">{isAr ? showAssignModal.nameAr : showAssignModal.nameEn}</div>
+                  <div className="flex gap-4 mt-2">
+                    <span className="text-xs font-mono font-bold text-slate-500 bg-white px-2 py-0.5 rounded shadow-sm border border-indigo-50 uppercase tracking-widest">MRN: {showAssignModal.mrn}</span>
+                    <span className="text-xs font-black text-rose-600 uppercase tracking-widest flex items-center gap-1.5"><ShieldAlert size={14} /> {showAssignModal.urgency}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isAr ? "الجناح المخصص" : "Assigned Department"}</label>
+                  <select
+                    value={selectedDept}
+                    onChange={(e) => {
+                      setSelectedDept(e.target.value);
+                      setSelectedBed("");
+                    }}
+                    className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-slate-700 focus:border-indigo-500 focus:ring-0 transition-all outline-none appearance-none"
+                  >
+                    <option value="">{isAr ? "اختر الجناح" : "Select Department"}</option>
+                    {departments.map(dept => (
+                      <option key={dept.id} value={dept.id}>
+                        {isAr ? dept.nameAr : dept.nameEn}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-4">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{isAr ? "السرير المتاح" : "Available Bed"}</label>
+                  <select 
+                    value={selectedBed}
+                    onChange={(e) => setSelectedBed(e.target.value)}
+                    disabled={!selectedDept}
+                    className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-slate-700 focus:border-indigo-500 focus:ring-0 transition-all outline-none appearance-none disabled:opacity-50"
+                  >
+                    <option value="">{isAr ? "اختر سريراً" : "Select Bed"}</option>
+                    {beds
+                      .filter(b => b.status === 'available' && b.departmentId === selectedDept)
+                      .map(bed => (
+                        <option key={bed.id} value={bed.id}>
+                          {bed.bedNumber} {bed.roomNumber ? `(${bed.roomNumber})` : ""}
+                        </option>
+                      ))
+                    }
+                  </select>
+                  {selectedDept && beds.filter(b => b.status === 'available' && b.departmentId === selectedDept).length === 0 && (
+                    <p className="text-[10px] font-bold text-rose-500 mt-1 flex items-center gap-1">
+                      <AlertCircle size={12} /> {isAr ? "لا توجد أسرة متاحة في هذا القسم" : "No beds available in this department"}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <ClinicalSignaturePanel 
+                language={language}
+                currentUser={currentUser}
+                onSave={() => toast.success(isAr ? "تم حفظ المسودة" : "Draft saved")}
+                onSign={handleSignAdmission}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

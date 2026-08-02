@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Default Deny Catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- PRIMITIVES ---
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    
+    // Role Helpers (Assuming a staff collection exists for RBAC)
+    function isStaff() { 
+      return isVerified() && exists(/databases/$(database)/documents/staff/$(request.auth.uid)); 
+    }
+    function isAdmin() {
+      return isVerified() && get(/databases/$(database)/documents/staff/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // --- COLLECTIONS ---
+
+    // 1. Patients
+    match /patients/{patientId} {
+      allow read: if isStaff();
+      allow create: if isStaff() && isValidPatient(incoming());
+      allow update: if isStaff() && isValidPatient(incoming()) && (
+        incoming().mrn == existing().mrn && // MRN is immutable
+        incoming().id == existing().id
+      );
+      allow delete: if isAdmin();
+      
+      function isValidPatient(data) {
+        return data.keys().hasAll(['id', 'mrn', 'nameEn', 'nameAr']) &&
+               data.id is string && data.id.size() <= 100 &&
+               data.mrn is string && data.mrn.size() <= 50 &&
+               data.nameEn is string && data.nameEn.size() <= 200 &&
+               data.nameAr is string && data.nameAr.size() <= 200;
+      }
+    }
+
+    // 2. Visits
+    match /his_visits/{visitId} {
+      allow read: if isStaff();
+      allow create: if isStaff() && isValidVisit(incoming());
+      allow update: if isStaff() && isValidVisit(incoming()) && (
+        incoming().patientId == existing().patientId &&
+        incoming().id == existing().id
+      );
+      
+      function isValidVisit(data) {
+        return data.keys().hasAll(['id', 'patientId', 'status']) &&
+               data.patientId is string &&
+               data.status in ['active', 'discharged', 'cancelled'];
+      }
+    }
+
+    // 3. Audit Logs (Append-Only)
+    match /his_audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn() && isValidAuditLog(incoming()) && incoming().userId == request.auth.uid;
+      allow update, delete: if false; // Immutable
+      
+      function isValidAuditLog(data) {
+        return data.keys().hasAll(['id', 'timestamp', 'userId', 'action']) &&
+               data.timestamp is string &&
+               data.userId is string &&
+               data.action is string;
+      }
+    }
+
+    // 4. Financial Charges
+    match /his_charges/{chargeId} {
+      allow read: if isStaff();
+      allow create: if isStaff() && isValidCharge(incoming()) && float(incoming().amount) > 0;
+      allow update: if isAdmin() && isValidCharge(incoming());
+      allow delete: if isAdmin();
+      
+      function isValidCharge(data) {
+        return data.keys().hasAll(['id', 'patientId', 'amount', 'serviceName']) &&
+               data.amount is number || data.amount is string; // Depending on how it's sent
+      }
+    }
+
+    // 5. Generic Settings/Configs (e.g., inventory, bed map)
+    match /settings/{settingKey} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+    
+    // 6. Clinical Notifications
+    match /notifications/{notifId} {
+      allow read: if isStaff();
+      allow create: if isStaff();
+      allow delete: if isStaff(); // Staff can clear their own or common notifications
+    }
+  }
+}
